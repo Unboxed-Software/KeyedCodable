@@ -102,6 +102,63 @@ extension Flat: Nullable {
         return wrapped.isNil
     }
 }
+
+@propertyWrapper
+public struct FlatCodedBy<T: DecodableTransformer>: Decodable {
+    public var wrappedValue: T.Object
+    
+    public init(wrappedValue: T.Object) {
+        self.wrappedValue = wrappedValue
+    }
+    
+    public init(from decoder: Decoder) throws {
+        wrappedValue = try decode(from: T.self, with: decoder)
+    }
+}
+
+extension FlatCodedBy: Encodable where T: EncodableTransformer {
+    public func encode(to encoder: Encoder) throws {
+        let encodable = try T.transform(object: wrappedValue)
+        try encodable?.encode(to: encoder)
+    }
+}
+
+extension FlatCodedBy: FlatType {
+    static var isArray: Bool {
+        return T.self is _Array.Type
+    }
+}
+
+private func decode<T: DecodableTransformer>(from type: T.Type, with decoder: Decoder) throws -> T.Object {
+    if let type = T.Source.self as? _Array.Type {
+        let unkeyed = try decoder.unkeyedContainer()
+        return type.optionalDecode(unkeyedContainer: unkeyed)
+    } else if let type = T.Source.self as? _Optional.Type {
+        guard let source = try? T.Source(from: decoder) else {
+            return type.empty as! T.Object
+        }
+        
+        guard let value = try T.transform(from: source) as? T.Object else {
+            throw KeyedCodableError.transformFailed
+        }
+        
+        return value
+    } else {
+        let source = try T.Source(from: decoder)
+        guard let value = try T.transform(from: source) as? T.Object else {
+            throw KeyedCodableError.transformFailed
+        }
+        
+        return  value
+    }
+}
+
+private func encodeObject<T>(object: T.Object, transType: T.Type, encoder: Encoder)
+    throws where T: EncodableTransformer {
+        let encodable = try T.transform(object: object)
+        var container = encoder.singleValueContainer()
+        try container.encode(encodable)
+}
 #endif
 
 public struct Keyed<Base> {

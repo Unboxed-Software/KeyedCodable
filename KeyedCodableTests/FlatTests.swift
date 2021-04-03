@@ -43,6 +43,39 @@ struct InnerWithFlatWrapperExample: Codable {
         case location
     }
 }
+
+struct InnerWithFlatWrapperAndTransformExample: Codable {
+    let greeting: String
+    @FlatCodedBy<LocationTransformer> private(set) var location: Location?
+
+    enum CodingKeys: String, KeyedKey {
+        case greeting = "inner.greeting"
+        case location
+    }
+}
+
+struct IntermediateLocation: Codable {
+    var interLat: Double
+    var interLon: Double
+}
+
+struct LocationTransformer: Transformer {
+    typealias Destination = IntermediateLocation
+    
+    static func transform(from decodable: IntermediateLocation) throws -> Any? {
+        return Location(latitude: decodable.interLat, longitude: decodable.interLon)
+    }
+    
+    static func transform(object: Location?) throws -> IntermediateLocation? {
+        guard let object = object,
+              let longitude = object.longitude else { return nil }
+        return IntermediateLocation(interLat: object.latitude, interLon: longitude)
+    }
+    
+    typealias Source = IntermediateLocation
+    
+    typealias Object = Location?
+}
 #endif
 
 class FlatTests: XCTestCase {
@@ -75,6 +108,24 @@ class FlatTests: XCTestCase {
             XCTAssert(test.greeting == "hallo")
             XCTAssert(test.location?.latitude == 3.4)
             XCTAssert(test.location?.longitude == 3.2)
+        }
+    }
+    
+    func testFlatDecodedByWrapper() throws {
+        let json = """
+        {
+            "inner": {
+                "greeting": "hallo"
+            },
+            "interLat": 3.2,
+            "interLon": 3.4
+        }
+        """.data(using: .utf8)!
+        
+        KeyedCodableTestHelper.checkEncode(data: json, checkString: false) { (test: InnerWithFlatWrapperAndTransformExample) in
+            XCTAssert(test.greeting == "hallo")
+            XCTAssert(test.location?.latitude == 3.2)
+            XCTAssert(test.location?.longitude == 3.4)
         }
     }
     #endif
